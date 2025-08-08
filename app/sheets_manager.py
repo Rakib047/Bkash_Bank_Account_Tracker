@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 class SheetsManager:
     def __init__(self):
         self.gc = None
-        self.worksheet = None
+        self.spreadsheet = None
+        self.summary_worksheet = None
+        self.transactions_worksheet = None
         self._setup_sheets_client()
 
     def _setup_sheets_client(self):
@@ -33,71 +35,67 @@ class SheetsManager:
                 )
             
             self.gc = gspread.authorize(creds)
-            spreadsheet = self.gc.open_by_key(settings.GOOGLE_SHEETS_ID)
+            self.spreadsheet = self.gc.open_by_key(settings.GOOGLE_SHEETS_ID)
             
-            # Try to get existing worksheet or create new one
+            # Setup Summary worksheet
             try:
-                self.worksheet = spreadsheet.worksheet(settings.WORKSHEET_NAME)
+                self.summary_worksheet = self.spreadsheet.worksheet("Summary")
             except gspread.exceptions.WorksheetNotFound:
-                self.worksheet = spreadsheet.add_worksheet(
-                    title=settings.WORKSHEET_NAME, 
-                    rows=1000, 
-                    cols=20
+                self.summary_worksheet = self.spreadsheet.add_worksheet(
+                    title="Summary", 
+                    rows=100, 
+                    cols=10
                 )
-                self._setup_headers()
+                self._setup_summary_headers()
+            
+            # Setup Transaction Details worksheet
+            try:
+                self.transactions_worksheet = self.spreadsheet.worksheet("Transaction Details")
+            except gspread.exceptions.WorksheetNotFound:
+                self.transactions_worksheet = self.spreadsheet.add_worksheet(
+                    title="Transaction Details", 
+                    rows=1000, 
+                    cols=15
+                )
+                self._setup_transaction_headers()
             
             logger.info("Google Sheets client setup successful")
-            
-            # Check if headers need to be fixed
-            self._fix_headers_if_needed()
             
         except Exception as e:
             logger.error(f"Failed to setup Google Sheets client: {str(e)}")
             raise
 
-    def _setup_headers(self):
-        """Setup column headers for the worksheet"""
-        # Clear the worksheet first
-        self.worksheet.clear()
+    def _setup_summary_headers(self):
+        """Setup Summary worksheet with simple 2-column structure"""
+        self.summary_worksheet.clear()
+        
+        # Set headers
+        headers = ["Metric", "Amount"]
+        self.summary_worksheet.append_row(headers)
+        
+        # Set up the three summary rows
+        summary_rows = [
+            ["Monthly Expense", "=SUMIFS('Transaction Details'!E:E,'Transaction Details'!A:A,\">=\"&DATE(YEAR(TODAY()),MONTH(TODAY()),1),'Transaction Details'!A:A,\"<\"&DATE(YEAR(TODAY()),MONTH(TODAY())+1,1),'Transaction Details'!D:D,\"expense\")"],
+            ["Today's Expense", "=SUMIFS('Transaction Details'!E:E,'Transaction Details'!A:A,TODAY(),'Transaction Details'!D:D,\"expense\")"],
+            ["Total Available Amount", "=SUMIF('Transaction Details'!C:C,\"EBL\",'Transaction Details'!F:F)+SUMIF('Transaction Details'!C:C,\"bKash\",'Transaction Details'!F:F)"]
+        ]
+        
+        for row in summary_rows:
+            self.summary_worksheet.append_row(row)
+
+    def _setup_transaction_headers(self):
+        """Setup Transaction Details worksheet headers"""
+        self.transactions_worksheet.clear()
         
         headers = [
             "Date", "Time", "Platform", "Transaction Type", "Transaction Amount", 
-            "Balance After", "Description", "Fee", "Transaction ID", "Raw Message",
-            "", "Current Amount in EBL", "Current Amount in bKash", 
-            "Current Total Amount", "Today's Expense", "Monthly Expense"
+            "Balance After", "Description", "Fee", "Transaction ID", "Raw Message"
         ]
         
-        self.worksheet.append_row(headers)
-        
-        # Set up summary formulas in the first data row
-        summary_formulas = [
-            "", "", "", "", "", "", "", "", "", "",  # Empty cells for transaction data
-            "",  # Separator
-            "=SUMIF(C:C,\"EBL\",F:F)",  # Current Amount in EBL (sum of EBL balances, latest)
-            "=SUMIF(C:C,\"bKash\",F:F)",  # Current Amount in bKash (sum of bKash balances, latest)
-            "=L2+M2",  # Current Total Amount
-            f"=SUMIFS(E:E,A:A,TODAY(),D:D,\"expense\")",  # Today's Expense
-            f"=SUMIFS(E:E,A:A,\">=\"&DATE(YEAR(TODAY()),MONTH(TODAY()),1),A:A,\"<\"&DATE(YEAR(TODAY()),MONTH(TODAY())+1,1),D:D,\"expense\")"  # Monthly Expense
-        ]
-        
-        self.worksheet.append_row(summary_formulas)
-
-    def _fix_headers_if_needed(self):
-        """Fix headers if they are misaligned"""
-        try:
-            # Get the first row to check if headers are properly aligned
-            first_row = self.worksheet.row_values(1)
-            
-            # Check if the first cell doesn't contain "Date" (indicating misalignment)
-            if not first_row or first_row[0] != "Date":
-                logger.info("Headers appear misaligned. Resetting worksheet...")
-                self._setup_headers()
-                
-        except Exception as e:
-            logger.error(f"Error checking/fixing headers: {str(e)}")
+        self.transactions_worksheet.append_row(headers)
 
     async def log_transaction(self, transaction_data: Dict[str, Any]) -> Dict[str, str]:
-        """Log transaction to Google Sheets"""
+        """Log transaction to Transaction Details worksheet"""
         try:
             # Prepare row data
             date_obj = transaction_data.get("date", datetime.now())
@@ -114,11 +112,8 @@ class SheetsManager:
                 transaction_data.get("raw_message", "")  # Raw Message
             ]
             
-            # Add to worksheet
-            self.worksheet.append_row(row_data)
-            
-            # Update summary calculations
-            await self._update_summary_calculations()
+            # Add to Transaction Details worksheet
+            self.transactions_worksheet.append_row(row_data)
             
             logger.info(f"Transaction logged to Google Sheets: {transaction_data['platform']} - {transaction_data['amount']}")
             
@@ -128,55 +123,39 @@ class SheetsManager:
             logger.error(f"Failed to log transaction to Google Sheets: {str(e)}")
             return {"status": "error", "message": str(e)}
 
-    async def _update_summary_calculations(self):
-        """Update summary calculations for current balances and expenses"""
-        try:
-            # Get all data
-            all_values = self.worksheet.get_all_values()
-            
-            if len(all_values) < 3:  # Headers + Summary + at least one transaction
-                return
-            
-            # Find latest balances for each platform
-            ebl_balance = 0
-            bkash_balance = 0
-            
-            for row in reversed(all_values[2:]):  # Skip headers and summary row
-                if row[2] == "EBL" and ebl_balance == 0:  # Platform column
-                    ebl_balance = float(row[5]) if row[5] else 0  # Balance column
-                elif row[2] == "bKash" and bkash_balance == 0:
-                    bkash_balance = float(row[5]) if row[5] else 0
-                
-                if ebl_balance > 0 and bkash_balance > 0:
-                    break
-            
-            # Update summary row (row 2)
-            summary_row = 2
-            self.worksheet.update_cell(summary_row, 12, ebl_balance)  # Current Amount in EBL
-            self.worksheet.update_cell(summary_row, 13, bkash_balance)  # Current Amount in bKash
-            self.worksheet.update_cell(summary_row, 14, ebl_balance + bkash_balance)  # Total Amount
-            
-        except Exception as e:
-            logger.error(f"Failed to update summary calculations: {str(e)}")
-
     def get_current_balances(self) -> Dict[str, float]:
-        """Get current balances for both platforms"""
+        """Get current balances and expenses from Summary worksheet"""
         try:
-            summary_row_values = self.worksheet.row_values(2)
+            # Get values from Summary worksheet
+            summary_values = self.summary_worksheet.get_all_values()
             
-            return {
-                "ebl_balance": float(summary_row_values[11]) if len(summary_row_values) > 11 and summary_row_values[11] else 0,
-                "bkash_balance": float(summary_row_values[12]) if len(summary_row_values) > 12 and summary_row_values[12] else 0,
-                "total_balance": float(summary_row_values[13]) if len(summary_row_values) > 13 and summary_row_values[13] else 0,
-                "today_expense": float(summary_row_values[14]) if len(summary_row_values) > 14 and summary_row_values[14] else 0,
-                "monthly_expense": float(summary_row_values[15]) if len(summary_row_values) > 15 and summary_row_values[15] else 0
+            result = {
+                "monthly_expense": 0,
+                "today_expense": 0,
+                "total_available": 0
             }
+            
+            # Parse the summary data (skip header row)
+            for i, row in enumerate(summary_values[1:], 1):
+                if len(row) >= 2:
+                    metric = row[0]
+                    try:
+                        amount = float(row[1]) if row[1] else 0
+                        if metric == "Monthly Expense":
+                            result["monthly_expense"] = amount
+                        elif metric == "Today's Expense":
+                            result["today_expense"] = amount
+                        elif metric == "Total Available Amount":
+                            result["total_available"] = amount
+                    except (ValueError, IndexError):
+                        continue
+            
+            return result
+            
         except Exception as e:
             logger.error(f"Failed to get current balances: {str(e)}")
             return {
-                "ebl_balance": 0,
-                "bkash_balance": 0,
-                "total_balance": 0,
+                "monthly_expense": 0,
                 "today_expense": 0,
-                "monthly_expense": 0
+                "total_available": 0
             }

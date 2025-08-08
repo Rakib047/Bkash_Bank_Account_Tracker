@@ -42,14 +42,15 @@ async def root():
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-@app.post("/fix-sheet-headers")
-async def fix_sheet_headers():
+@app.post("/setup-worksheets")
+async def setup_worksheets():
     try:
-        logger.info("Manually fixing sheet headers...")
-        sheets_manager._setup_headers()
-        return {"status": "success", "message": "Sheet headers have been reset and realigned"}
+        logger.info("Setting up Summary and Transaction Details worksheets...")
+        sheets_manager._setup_summary_headers()
+        sheets_manager._setup_transaction_headers()
+        return {"status": "success", "message": "Both worksheets have been set up with proper structure"}
     except Exception as e:
-        logger.error(f"Error fixing sheet headers: {str(e)}")
+        logger.error(f"Error setting up worksheets: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/process-sms")
