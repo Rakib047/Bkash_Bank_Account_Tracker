@@ -258,5 +258,7 @@ class SMSProcessor:
         # Check for bKash INTERNAL TRANSFER keywords
         elif "received deposit" in message_lower:
             return "bkash_bank_internal"
+        elif "bkash to bank" in message_lower:
+            return "bkash_bank_internal"
             
         return "unknown"
