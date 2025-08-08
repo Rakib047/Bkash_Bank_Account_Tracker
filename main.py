@@ -1,14 +1,10 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional
 import uvicorn
 import logging
-from datetime import datetime
 
-from app.sms_processor import SMSProcessor
-from app.sheets_manager import SheetsManager
-from app.config import settings
+from app.Api.routes import router
+from app.Configuration.config import settings
 
 app = FastAPI(
     title="Transaction SMS Processor",
@@ -24,56 +20,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-sms_processor = SMSProcessor()
-sheets_manager = SheetsManager()
-
-class SMSMessage(BaseModel):
-    message: str
-    timestamp: Optional[datetime] = None
-
-@app.get("/")
-async def root():
-    return {"message": "Transaction SMS Processor API", "status": "running"}
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
-
-@app.post("/setup-worksheets")
-async def setup_worksheets():
-    try:
-        logger.info("Setting up Summary and Transaction Details worksheets...")
-        sheets_manager._setup_summary_headers()
-        sheets_manager._setup_transaction_headers()
-        return {"status": "success", "message": "Both worksheets have been set up with proper structure"}
-    except Exception as e:
-        logger.error(f"Error setting up worksheets: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/process-sms")
-async def process_sms(sms: SMSMessage):
-    try:
-        logger.info(f"Received SMS: {sms.message}")
-        
-        # Parse the SMS message
-        transaction_data = sms_processor.parse_message(sms.message)
-        
-        if not transaction_data:
-            logger.info("SMS not recognized as transaction message")
-            return {"status": "ignored", "reason": "Not a transaction message"}
-        
-        # Log to Google Sheets
-        result = await sheets_manager.log_transaction(transaction_data)
-        
-        logger.info(f"Transaction logged successfully: {transaction_data}")
-        return {"status": "success", "data": transaction_data, "sheets_result": result}
-        
-    except Exception as e:
-        logger.error(f"Error processing SMS: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+# Include API routes
+app.include_router(router)
 
 if __name__ == "__main__":
     uvicorn.run(

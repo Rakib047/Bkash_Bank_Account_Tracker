@@ -5,7 +5,7 @@ import logging
 import json
 import os
 from datetime import datetime
-from app.config import settings
+from app.Configuration.config import settings
 
 logger = logging.getLogger(__name__)
 
