@@ -2,6 +2,8 @@ import gspread
 from google.oauth2.service_account import Credentials
 from typing import Dict, Any, List
 import logging
+import json
+import os
 from datetime import datetime
 from app.config import settings
 
@@ -21,10 +23,14 @@ class SheetsManager:
                 'https://www.googleapis.com/auth/drive'
             ]
             
-            creds = Credentials.from_service_account_file(
-                settings.GOOGLE_SERVICE_ACCOUNT_PATH, 
-                scopes=scope
-            )
+            if os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON'):
+                service_account_info = json.loads(os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON'))
+                creds = Credentials.from_service_account_info(service_account_info, scopes=scope)
+            else:
+                creds = Credentials.from_service_account_file(
+                    settings.GOOGLE_SERVICE_ACCOUNT_PATH, 
+                    scopes=scope
+                )
             
             self.gc = gspread.authorize(creds)
             spreadsheet = self.gc.open_by_key(settings.GOOGLE_SHEETS_ID)
