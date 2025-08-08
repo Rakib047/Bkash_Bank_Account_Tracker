@@ -59,13 +59,8 @@ class SMSProcessor:
             date_str = match.group(4)
             balance = float(match.group(5).replace(',', ''))
             
-            # Determine if it's expense or income
-            transaction_type = "expense" if transaction_type_raw == "debited" else "income"
-            
-            # Skip internal transfers between bKash and EBL
-            if "bKash" in description and transaction_type_raw == "debited":
-                # This is money going to bKash, don't count as expense
-                transaction_type = "transfer_out"
+            # Determine transaction type based on your definitions
+            transaction_type = self._categorize_ebl_transaction(transaction_type_raw, description)
             
             return {
                 "platform": "EBL",
@@ -107,8 +102,8 @@ class SMSProcessor:
             date_str = match.group(3)
             balance = float(match.group(4).replace(',', ''))
             
-            # This is money coming from bKash to EBL, don't count as income
-            transaction_type = "transfer_in" if "bKash" in source else "income"
+            # Categorize Fund Transfer based on your definitions
+            transaction_type = "bkash_bank_internal" if "bKash" in source else "income"
             
             return {
                 "platform": "EBL",
@@ -137,8 +132,8 @@ class SMSProcessor:
             trx_id = match.group(5)
             date_str = match.group(6)
             
-            # Money from VISA card is income (from EBL to bKash)
-            transaction_type = "transfer_in" if "VISA Card" in source else "income"
+            # Categorize based on your definitions
+            transaction_type = self._categorize_bkash_transaction(message, f"Deposit from {source}")
             
             return {
                 "platform": "bKash",
@@ -165,8 +160,8 @@ class SMSProcessor:
             date_str = match.group(6)
             
             return {
-                "platform": "bKash",
-                "transaction_type": "income",
+                "platform": "bKash", 
+                "transaction_type": "income",  # Cash In is always income
                 "raw_type": "bKash Cash In",
                 "amount": amount,
                 "balance": balance,
@@ -229,3 +224,39 @@ class SMSProcessor:
             return self.timezone.localize(dt)
         except:
             return datetime.now(self.timezone)
+
+    def _categorize_ebl_transaction(self, transaction_type_raw: str, description: str) -> str:
+        """Categorize EBL transactions based on your definitions"""
+        description_lower = description.lower()
+        
+        # Check for EBL EXPENSE keywords
+        if any(keyword in description_lower for keyword in ["cash wd", "purchase"]) or transaction_type_raw == "debited":
+            # Check if it's an internal transfer to bKash
+            if "bkash" in description_lower:
+                return "bkash_bank_internal"
+            return "expense"
+        
+        # Check for EBL INCOME keywords  
+        elif transaction_type_raw == "credited":
+            return "income"
+            
+        return "unknown"
+
+    def _categorize_bkash_transaction(self, message: str, description: str) -> str:
+        """Categorize bKash transactions based on your definitions"""
+        message_lower = message.lower()
+        description_lower = description.lower()
+        
+        # Check for bKash EXPENSE keywords
+        if any(keyword in message_lower for keyword in ["payment", "cash out", "send money"]):
+            return "expense"
+        
+        # Check for bKash INCOME keywords
+        elif "cash in" in message_lower:
+            return "income"
+        
+        # Check for bKash INTERNAL TRANSFER keywords
+        elif "received deposit" in message_lower:
+            return "bkash_bank_internal"
+            
+        return "unknown"
