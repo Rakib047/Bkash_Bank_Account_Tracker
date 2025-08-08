@@ -48,12 +48,18 @@ class SheetsManager:
             
             logger.info("Google Sheets client setup successful")
             
+            # Check if headers need to be fixed
+            self._fix_headers_if_needed()
+            
         except Exception as e:
             logger.error(f"Failed to setup Google Sheets client: {str(e)}")
             raise
 
     def _setup_headers(self):
         """Setup column headers for the worksheet"""
+        # Clear the worksheet first
+        self.worksheet.clear()
+        
         headers = [
             "Date", "Time", "Platform", "Transaction Type", "Transaction Amount", 
             "Balance After", "Description", "Fee", "Transaction ID", "Raw Message",
@@ -75,6 +81,20 @@ class SheetsManager:
         ]
         
         self.worksheet.append_row(summary_formulas)
+
+    def _fix_headers_if_needed(self):
+        """Fix headers if they are misaligned"""
+        try:
+            # Get the first row to check if headers are properly aligned
+            first_row = self.worksheet.row_values(1)
+            
+            # Check if the first cell doesn't contain "Date" (indicating misalignment)
+            if not first_row or first_row[0] != "Date":
+                logger.info("Headers appear misaligned. Resetting worksheet...")
+                self._setup_headers()
+                
+        except Exception as e:
+            logger.error(f"Error checking/fixing headers: {str(e)}")
 
     async def log_transaction(self, transaction_data: Dict[str, Any]) -> Dict[str, str]:
         """Log transaction to Google Sheets"""

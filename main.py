@@ -42,6 +42,16 @@ async def root():
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
+@app.post("/fix-sheet-headers")
+async def fix_sheet_headers():
+    try:
+        logger.info("Manually fixing sheet headers...")
+        sheets_manager._setup_headers()
+        return {"status": "success", "message": "Sheet headers have been reset and realigned"}
+    except Exception as e:
+        logger.error(f"Error fixing sheet headers: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/process-sms")
 async def process_sms(sms: SMSMessage):
     try:
