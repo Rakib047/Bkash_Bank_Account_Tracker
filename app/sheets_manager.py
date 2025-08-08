@@ -77,7 +77,7 @@ class SheetsManager:
         summary_rows = [
             ["Monthly Expense", "=SUMIFS('Transaction Details'!E:E,'Transaction Details'!A:A,\">=\"&DATE(YEAR(TODAY()),MONTH(TODAY()),1),'Transaction Details'!A:A,\"<\"&DATE(YEAR(TODAY()),MONTH(TODAY())+1,1),'Transaction Details'!D:D,\"expense\")"],
             ["Today's Expense", "=SUMIFS('Transaction Details'!E:E,'Transaction Details'!A:A,TODAY(),'Transaction Details'!D:D,\"expense\")"],
-            ["Total Available Amount", "=SUMIF('Transaction Details'!C:C,\"EBL\",'Transaction Details'!F:F)+SUMIF('Transaction Details'!C:C,\"bKash\",'Transaction Details'!F:F)"]
+            ["Total Available Amount", "0"]  # Will be updated programmatically
         ]
         
         for row in summary_rows:
@@ -115,6 +115,9 @@ class SheetsManager:
             # Add to Transaction Details worksheet
             self.transactions_worksheet.append_row(row_data)
             
+            # Update total available amount in Summary
+            await self._update_total_available()
+            
             logger.info(f"Transaction logged to Google Sheets: {transaction_data['platform']} - {transaction_data['amount']}")
             
             return {"status": "success", "message": "Transaction logged successfully"}
@@ -122,6 +125,46 @@ class SheetsManager:
         except Exception as e:
             logger.error(f"Failed to log transaction to Google Sheets: {str(e)}")
             return {"status": "error", "message": str(e)}
+
+    async def _update_total_available(self):
+        """Update the total available amount in Summary worksheet"""
+        try:
+            # Get all transaction data
+            all_values = self.transactions_worksheet.get_all_values()
+            
+            if len(all_values) < 2:  # No data besides headers
+                return
+            
+            # Find latest balances for each platform
+            ebl_balance = 0
+            bkash_balance = 0
+            
+            # Go through transactions from newest to oldest
+            for row in reversed(all_values[1:]):  # Skip headers
+                if len(row) >= 6:  # Ensure we have enough columns
+                    platform = row[2]  # Platform column
+                    try:
+                        balance = float(row[5]) if row[5] else 0  # Balance After column
+                        if platform == "EBL" and ebl_balance == 0:
+                            ebl_balance = balance
+                        elif platform == "bKash" and bkash_balance == 0:
+                            bkash_balance = balance
+                        
+                        # Stop when we have both balances
+                        if ebl_balance > 0 and bkash_balance > 0:
+                            break
+                    except (ValueError, IndexError):
+                        continue
+            
+            total_available = ebl_balance + bkash_balance
+            
+            # Update the Total Available Amount in Summary (row 4, column 2)
+            self.summary_worksheet.update_cell(4, 2, total_available)
+            
+            logger.info(f"Updated total available amount: {total_available} (EBL: {ebl_balance}, bKash: {bkash_balance})")
+            
+        except Exception as e:
+            logger.error(f"Failed to update total available amount: {str(e)}")
 
     def get_current_balances(self) -> Dict[str, float]:
         """Get current balances and expenses from Summary worksheet"""
