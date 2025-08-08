@@ -3,7 +3,7 @@ from typing import Optional
 from pathlib import Path
 
 # Load .env file if it exists
-env_path = Path(__file__).parent.parent / '.env'
+env_path = Path(__file__).parent.parent.parent / '.env'
 if env_path.exists():
     with open(env_path) as f:
         for line in f:

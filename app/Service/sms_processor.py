@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from typing import Optional, Dict, Any
 import pytz
-from app.config import settings
+from app.Configuration.config import settings
 
 class SMSProcessor:
     def __init__(self):
