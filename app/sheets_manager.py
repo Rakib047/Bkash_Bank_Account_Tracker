@@ -73,11 +73,13 @@ class SheetsManager:
         headers = ["Metric", "Amount"]
         self.summary_worksheet.append_row(headers)
         
-        # Set up the three summary rows
+        # Set up the five summary rows
         summary_rows = [
             ["Monthly Expense", "=SUMIFS('Transaction Details'!E:E,'Transaction Details'!A:A,\">=\"&DATE(YEAR(TODAY()),MONTH(TODAY()),1),'Transaction Details'!A:A,\"<\"&DATE(YEAR(TODAY()),MONTH(TODAY())+1,1),'Transaction Details'!D:D,\"expense\")"],
             ["Today's Expense", "=SUMIFS('Transaction Details'!E:E,'Transaction Details'!A:A,TODAY(),'Transaction Details'!D:D,\"expense\")"],
-            ["Total Available Amount", "0"]  # Will be updated programmatically
+            ["Total Available Amount", "0"],  # Will be updated programmatically
+            ["bKash Total Balance", "0"],  # Will be updated programmatically
+            ["EBL Total Balance", "0"]  # Will be updated programmatically
         ]
         
         for row in summary_rows:
@@ -127,7 +129,7 @@ class SheetsManager:
             return {"status": "error", "message": str(e)}
 
     async def _update_total_available(self):
-        """Update the total available amount in Summary worksheet"""
+        """Update the total available amount and individual balances in Summary worksheet"""
         try:
             # Get all transaction data
             all_values = self.transactions_worksheet.get_all_values()
@@ -158,13 +160,15 @@ class SheetsManager:
             
             total_available = ebl_balance + bkash_balance
             
-            # Update the Total Available Amount in Summary (row 4, column 2)
-            self.summary_worksheet.update_cell(4, 2, total_available)
+            # Update all balance fields in Summary
+            self.summary_worksheet.update_cell(4, 2, total_available)  # Row 4: Total Available Amount
+            self.summary_worksheet.update_cell(5, 2, bkash_balance)    # Row 5: bKash Total Balance
+            self.summary_worksheet.update_cell(6, 2, ebl_balance)      # Row 6: EBL Total Balance
             
-            logger.info(f"Updated total available amount: {total_available} (EBL: {ebl_balance}, bKash: {bkash_balance})")
+            logger.info(f"Updated balances - Total: {total_available}, EBL: {ebl_balance}, bKash: {bkash_balance}")
             
         except Exception as e:
-            logger.error(f"Failed to update total available amount: {str(e)}")
+            logger.error(f"Failed to update balances: {str(e)}")
 
     def get_current_balances(self) -> Dict[str, float]:
         """Get current balances and expenses from Summary worksheet"""
@@ -175,7 +179,9 @@ class SheetsManager:
             result = {
                 "monthly_expense": 0,
                 "today_expense": 0,
-                "total_available": 0
+                "total_available": 0,
+                "bkash_balance": 0,
+                "ebl_balance": 0
             }
             
             # Parse the summary data (skip header row)
@@ -190,6 +196,10 @@ class SheetsManager:
                             result["today_expense"] = amount
                         elif metric == "Total Available Amount":
                             result["total_available"] = amount
+                        elif metric == "bKash Total Balance":
+                            result["bkash_balance"] = amount
+                        elif metric == "EBL Total Balance":
+                            result["ebl_balance"] = amount
                     except (ValueError, IndexError):
                         continue
             
@@ -200,5 +210,7 @@ class SheetsManager:
             return {
                 "monthly_expense": 0,
                 "today_expense": 0,
-                "total_available": 0
+                "total_available": 0,
+                "bkash_balance": 0,
+                "ebl_balance": 0
             }
