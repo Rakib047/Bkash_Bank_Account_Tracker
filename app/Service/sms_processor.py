@@ -25,6 +25,9 @@ class SMSProcessor:
             # Pattern for "You have received deposit of Tk amount"
             r'You\s+have\s+received\s+deposit\s+of\s+Tk\s+([\d,]+(?:\.\d{2})?)\s+from\s+(.+?)\.\s+Fee\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+Balance\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+TrxID\s+(\w+)\s+at\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})',
             
+            # Pattern for "You have received Tk amount from phone number"
+            r'You\s+have\s+received\s+Tk\s+([\d,]+(?:\.\d{2})?)\s+from\s+(\d+)\.\s+(?:Ref\s+(.+?)\.\s+)?Fee\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+Balance\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+TrxID\s+(\w+)\s+at\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})',
+            
             # Pattern for "Cash In Tk amount"
             r'Cash\s+In\s+Tk\s+([\d,]+(?:\.\d{2})?)\s+from\s+(\d+)\s+successful\.\s+Fee\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+Balance\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+TrxID\s+(\w+)\s+at\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})',
             
@@ -148,9 +151,32 @@ class SMSProcessor:
                 "raw_message": message
             }
         
-        # Pattern 2: Cash In
-        pattern2 = r'Cash\s+In\s+Tk\s+([\d,]+(?:\.\d{2})?)\s+from\s+(\d+)\s+successful\.\s+Fee\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+Balance\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+TrxID\s+(\w+)\s+at\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})'
+        # Pattern 2: You have received (general pattern for all bKash incoming)
+        pattern2 = r'You\s+have\s+received.*?Tk\s+([\d,]+(?:\.\d{2})?)\s+.*?Fee\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+Balance\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+TrxID\s+(\w+)\s+at\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})'
         match = re.search(pattern2, message, re.IGNORECASE)
+        if match:
+            amount = float(match.group(1).replace(',', ''))
+            fee = float(match.group(2).replace(',', ''))
+            balance = float(match.group(3).replace(',', ''))
+            trx_id = match.group(4)
+            date_str = match.group(5)
+            
+            return {
+                "platform": "bKash",
+                "transaction_type": "income",  # Received money is always income
+                "raw_type": "bKash Received",
+                "amount": amount,
+                "balance": balance,
+                "fee": fee,
+                "description": "You have received money",
+                "transaction_id": trx_id,
+                "date": self._parse_bkash_date(date_str),
+                "raw_message": message
+            }
+        
+        # Pattern 3: Cash In
+        pattern3 = r'Cash\s+In\s+Tk\s+([\d,]+(?:\.\d{2})?)\s+from\s+(\d+)\s+successful\.\s+Fee\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+Balance\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+TrxID\s+(\w+)\s+at\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})'
+        match = re.search(pattern3, message, re.IGNORECASE)
         if match:
             amount = float(match.group(1).replace(',', ''))
             from_number = match.group(2)
@@ -172,9 +198,9 @@ class SMSProcessor:
                 "raw_message": message
             }
         
-        # Pattern 3: Payment
-        pattern3 = r'Payment\s+Tk\s+([\d,]+(?:\.\d{2})?)\s+to\s+(\d+)\s+successful\.\s+(?:Ref\s+(.+?)\.\s+)?Fee\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+Balance\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+TrxID\s+(\w+)\s+at\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})'
-        match = re.search(pattern3, message, re.IGNORECASE)
+        # Pattern 4: Payment
+        pattern4 = r'Payment\s+Tk\s+([\d,]+(?:\.\d{2})?)\s+to\s+(\d+)\s+successful\.\s+(?:Ref\s+(.+?)\.\s+)?Fee\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+Balance\s+Tk\s+([\d,]+(?:\.\d{2})?)\.\s+TrxID\s+(\w+)\s+at\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})'
+        match = re.search(pattern4, message, re.IGNORECASE)
         if match:
             amount = float(match.group(1).replace(',', ''))
             to_number = match.group(2)
