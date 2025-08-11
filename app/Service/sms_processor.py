@@ -40,7 +40,7 @@ class SMSProcessor:
         message = message.strip()
         
         # Try EBL patterns first
-        if "EBL" in message or "AC " in message:
+        if "EBL" in message or "AC " in message or "Purchase txn BDT" in message or "Cash WD BDT" in message or "Fund Transfer of BDT" in message:
             return self._parse_ebl_message(message)
         
         # Try Bkash patterns
@@ -115,6 +115,26 @@ class SMSProcessor:
                 "amount": amount,
                 "balance": balance,
                 "description": f"Fund Transfer from {source}",
+                "date": self._parse_ebl_date_bst(date_str),
+                "raw_message": message
+            }
+        
+        # Pattern 4: Purchase transactions
+        pattern4 = r'Purchase\s+txn\s+BDT\s+([\d,]+(?:\.\d{2})?)\s+from\s+(.+?)\s*\.\s*(?:D\.)?Card\s+\d+\*+\d+\s+on\s+(\d{2}-[A-Za-z]{3}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+[AP]M\s+BST)\.Your\s+A/C\s+\d+\*+\d+\s+Balance\s+BDT\s+([\d,]+(?:\.\d{2})?)'
+        match = re.search(pattern4, message, re.IGNORECASE)
+        if match:
+            amount = float(match.group(1).replace(',', ''))
+            merchant = match.group(2)
+            date_str = match.group(3)
+            balance = float(match.group(4).replace(',', ''))
+            
+            return {
+                "platform": "EBL",
+                "transaction_type": "expense",
+                "raw_type": "EBL Purchase",
+                "amount": amount,
+                "balance": balance,
+                "description": f"Purchase from {merchant}",
                 "date": self._parse_ebl_date_bst(date_str),
                 "raw_message": message
             }
